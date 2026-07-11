@@ -9,28 +9,15 @@ import requests
 import pandas as pd
 from Bio import PDB
 
-#### Config
-BASE_DIR = "data/pdbs_query"
-CIF_DIR = os.path.join(BASE_DIR, "structures")
-os.makedirs(BASE_DIR, exist_ok=True)
-os.makedirs(CIF_DIR, exist_ok=True)
-
 #### Functions
 
 def uniprot_to_pdb_ids(uniprot_id):
     """Query RCSB Search API for PDB IDs associated with a UniProt accession.
 
     Iterates through paginated results until all matching PDB IDs are retrieved.
-
-    Parameters
-    ----------
-    uniprot_id : str
-        UniProt accession (e.g. "Q9UNS1").
-
     Returns
-    -------
-    list of str
-        PDB entry identifiers linked to the UniProt ID.
+    -------    list of str
+        --> PDB entry identifiers linked to the UniProt ID.
     """
     url = "https://search.rcsb.org/rcsbsearch/v2/query"
     all_pdb_ids = []
@@ -339,7 +326,7 @@ def get_chain_identity(cif_file_path, uniprot_id):
         break  # only first model needed for chain-level mapping
 
     return pd.DataFrame(rows)
-    
+
 
 #### Main
 def main():
@@ -351,11 +338,27 @@ def main():
         required=True,
         help="UniProt accession ID"
     )
+    parser.add_argument(
+        "--outdir",
+        default="data/pdbs_query",
+        help="Base directory configuration for output (default: data/pdbs_query)"
+    )
     args = parser.parse_args()
 
     uniprot_id = args.uniprot_id
-    pdbs_file = os.path.join(BASE_DIR, f"{uniprot_id}_pdbs.tsv")
-    chains_file = os.path.join(BASE_DIR, f"{uniprot_id}_chains.tsv")
+    
+    #### Dynamic Folder Setup
+    BASE_DIR = args.outdir
+    CIF_DIR = os.path.join(BASE_DIR, "structures")
+    META_DIR = os.path.join(BASE_DIR, "metadata")
+    
+    os.makedirs(BASE_DIR, exist_ok=True)
+    os.makedirs(CIF_DIR, exist_ok=True)
+    os.makedirs(META_DIR, exist_ok=True)
+
+    # TSV outputs are directed strictly inside META_DIR
+    pdbs_file = os.path.join(META_DIR, f"{uniprot_id}_pdbs.tsv")
+    chains_file = os.path.join(META_DIR, f"{uniprot_id}_chains.tsv")
 
     #### 1. Get PDB IDs
     if os.path.exists(pdbs_file):
@@ -413,3 +416,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
