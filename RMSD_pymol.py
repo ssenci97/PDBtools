@@ -36,11 +36,11 @@ def load_file_list(path: str) -> list[str]:
     return [os.path.abspath(line) for line in lines]
 
 
-def align_pdb_structures(mol1_path: str, mol2_path: str) -> pd.DataFrame:
-    """Align two PDB structures with PyMOL and return metrics as a DataFrame."""
+#### FUNCTIONS
+def align_pdb_structures(mol1_path: str, mol2_path: str, return_structure: bool = False):
     with tempfile.TemporaryDirectory() as tmp_dir:
 
-        def prepare(path: str) -> str:
+        def prepare(path):
             if path.endswith(".gz"):
                 h = hashlib.md5(path.encode()).hexdigest()[:8]
                 out = os.path.join(tmp_dir, f"{h}_{os.path.basename(path)[:-3]}")
@@ -68,8 +68,94 @@ def align_pdb_structures(mol1_path: str, mol2_path: str) -> pd.DataFrame:
             "n_residues_aligned": n_res_aligned,
         }])
 
+        if return_structure:
+            aligned_structures = {
+                "mol_1": cmd.get_pdbstr(mol1_name),
+                "mol_2": cmd.get_pdbstr(mol2_name),
+            }
+            return df, aligned_structures
+
     return df
 
+##########################
+def plot_aligned_structures(aligned_structures, width=800, height=600):
+    import py3Dmol
+
+    def get_chains(pdb_str):
+        chains = []
+        for line in pdb_str.splitlines():
+            if line.startswith(("ATOM", "HETATM")):
+                chain = line[21]
+                if chain not in chains:
+                    chains.append(chain)
+        return chains
+
+    hot_colors = ["orange", "yellow", "red", "gold"]
+    cold_colors = ["lightblue", "green", "teal", "cyan"]
+
+    view = py3Dmol.view(width=width, height=height)
+
+    view.addModel(aligned_structures["mol_1"], "pdb")
+    for i, chain in enumerate(get_chains(aligned_structures["mol_1"])):
+        view.setStyle({"model": 0, "chain": chain}, {"cartoon": {"color": hot_colors[i % len(hot_colors)]}})
+
+    view.addModel(aligned_structures["mol_2"], "pdb")
+    for i, chain in enumerate(get_chains(aligned_structures["mol_2"])):
+        view.setStyle({"model": 1, "chain": chain}, {"cartoon": {"color": cold_colors[i % len(cold_colors)]}})
+
+    view.zoomTo()
+    return view
+
+#######################################
+def plot_rmsd_heatmap(aln_df, rmsd_col='rmsd', save_path=None, label_replace=None, title=None):
+    pdb_ids = sorted(set(aln_df['pdb_id1']) | set(aln_df['pdb_id2']))
+    n = len(pdb_ids)
+
+    matrix = np.full((n, n), np.nan)
+    id_to_idx = {pdb_id: i for i, pdb_id in enumerate(pdb_ids)}
+
+    for _, row in aln_df.iterrows():
+        i = id_to_idx[row['pdb_id1']]
+        j = id_to_idx[row['pdb_id2']]
+        matrix[i, j] = row[rmsd_col]
+        matrix[j, i] = row[rmsd_col]
+
+    mask = np.triu(np.ones_like(matrix, dtype=bool), k=1)
+
+    fig, ax = plt.subplots(figsize=(max(8, n * 0.6), max(6, n * 0.5)))
+
+    cmap = mcolors.LinearSegmentedColormap.from_list(
+        'rmsd_cmap', ['#006400', '#228B22', '#9ACD32', '#D3D3D3', '#696969']
+    )
+
+    sns.heatmap(
+        matrix, mask=mask, xticklabels=pdb_ids, yticklabels=pdb_ids,
+        cmap=cmap, annot=True, fmt='.1f', linewidths=0.5, square=True,
+        cbar_kws={'label': 'RMSD (Å)'}, ax=ax, vmin=0, vmax=5
+    )
+
+    if label_replace:
+        xlabels = [l.get_text() for l in ax.get_xticklabels()]
+        ylabels = [l.get_text() for l in ax.get_yticklabels()]
+        for rep in label_replace:
+            xlabels = [x.replace(rep, '') for x in xlabels]
+            ylabels = [y.replace(rep, '') for y in ylabels]
+        ax.set_xticklabels(xlabels)
+        ax.set_yticklabels(ylabels)
+
+    ax.set_xlabel('')
+    ax.set_ylabel('')
+    ax.set_title(title or 'RMSD All-vs-All Triangular Heatmap')
+    plt.xticks(rotation=45, ha='right')
+    plt.yticks(rotation=0)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    else:
+        plt.show()
+
+    return fig, ax
 
 def main():
     args = parse_args()
