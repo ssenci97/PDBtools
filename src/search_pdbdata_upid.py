@@ -1,13 +1,14 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-#### Dependencies
 import argparse
 import os
 import re
 import requests
 import pandas as pd
 from Bio import PDB
+
+#### TUNABLES / CONFIG
+# Base URL for RCSB FASTA downloads (per entry)
+RCSB_FASTA_URL = "https://www.rcsb.org/fasta/entry/{pdb_id}/download"
+# ---------------------------------------------------------------------
 
 #### Functions
 
@@ -148,6 +149,38 @@ def download_cif(pdb_id, out_dir):
         return path
 
     url = f"https://files.rcsb.org/download/{pdb_id}.cif"
+    try:
+        response = requests.get(url, timeout=60)
+        response.raise_for_status()
+        with open(path, "w") as fh:
+            fh.write(response.text)
+        return path
+    except Exception:
+        return None
+
+
+def download_fasta(pdb_id, out_dir):
+    """Download the FASTA sequence file for a PDB entry from RCSB.
+
+    Skips download if the file already exists.
+
+    Parameters
+    ----------
+    pdb_id : str
+        PDB entry identifier.
+    out_dir : str
+        Directory where the .fasta file will be written.
+
+    Returns
+    -------
+    str or None
+        Path to the saved file, or None if the download failed.
+    """
+    path = os.path.join(out_dir, f"{pdb_id}.fasta")
+    if os.path.exists(path):
+        return path
+
+    url = RCSB_FASTA_URL.format(pdb_id=pdb_id.upper())
     try:
         response = requests.get(url, timeout=60)
         response.raise_for_status()
@@ -343,6 +376,11 @@ def main():
         default="data/pdbs_query",
         help="Base directory configuration for output (default: data/pdbs_query)"
     )
+    parser.add_argument(
+        "--fasta",
+        action="store_true",
+        help="Also download FASTA sequences for each PDB entry into outdir/fasta/"
+    )
     args = parser.parse_args()
 
     uniprot_id = args.uniprot_id
@@ -355,6 +393,10 @@ def main():
     os.makedirs(BASE_DIR, exist_ok=True)
     os.makedirs(CIF_DIR, exist_ok=True)
     os.makedirs(META_DIR, exist_ok=True)
+
+    if args.fasta:
+        FASTA_DIR = os.path.join(BASE_DIR, "fasta")
+        os.makedirs(FASTA_DIR, exist_ok=True)
 
     # TSV outputs are directed strictly inside META_DIR
     pdbs_file = os.path.join(META_DIR, f"{uniprot_id}_pdbs.tsv")
@@ -389,6 +431,10 @@ def main():
         all_chain_rows = []
         for pdb_id in df_pdbs["pdb_id"].unique():
             cif_path = download_cif(pdb_id, CIF_DIR)
+            if args.fasta:
+                fasta_path = download_fasta(pdb_id, FASTA_DIR)
+                if fasta_path:
+                    print(f"  Saved FASTA: {fasta_path}")
             if cif_path:
                 chain_df = get_chain_identity(cif_path, uniprot_id)
                 all_chain_rows.append(chain_df)
