@@ -242,12 +242,11 @@ def main():
     )
     parser.add_argument("--query", required=True, help="Search query (e.g. 'kinase', 'ribosome')")
     parser.add_argument("--min_year", type=int, default=2023, help="Keep PDBs released from this year onward")
-    parser.add_argument("--outdir", default="data/pdbs_query", help="Output directory")
+    parser.add_argument("--output", default="data/pdbs_query/pdbs.tsv", help="Output TSV file path")
     args = parser.parse_args()
 
-    safe_query_name = "".join(c if c.isalnum() else "_" for c in args.query).strip("_")
-    os.makedirs(args.outdir, exist_ok=True)
-    out_file = os.path.join(args.outdir, f"{safe_query_name}_pdbs.tsv")
+    out_file = args.output
+    os.makedirs(os.path.dirname(out_file), exist_ok=True)
 
     print(f"Searching RCSB for: '{args.query}' (Released {args.min_year}+)...")
     pdb_ids = search_rcsb(args.query, args.min_year)
